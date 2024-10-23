@@ -1,0 +1,48 @@
+-- Create table
+create table PROJECT_USERS
+(
+  user_id          NUMBER generated always as identity,
+  org_id           NUMBER,
+  password         VARCHAR2(200),
+  role             VARCHAR2(200),
+  employee_name    VARCHAR2(200),
+  created_at       VARCHAR2(200),
+  employee_surname VARCHAR2(200),
+  telephone        NUMBER,
+  person_id        NUMBER,
+  warehouse_id     NUMBER,
+  is_active        NUMBER
+)
+tablespace SYSTEM
+  pctfree 10
+  pctused 40
+  initrans 1
+  maxtrans 255
+  storage
+  (
+    initial 64K
+    next 1M
+    minextents 1
+    maxextents unlimited
+  );
+-- Create/Recreate primary, unique and foreign key constraints 
+alter table PROJECT_USERS
+  add constraint PK_PROJECT_USER_ID primary key (USER_ID)
+  using index 
+  tablespace SYSTEM
+  pctfree 10
+  initrans 2
+  maxtrans 255
+  storage
+  (
+    initial 64K
+    next 1M
+    minextents 1
+    maxextents unlimited
+  );
+alter table PROJECT_USERS
+  add constraint FK_ORG_ID foreign key (ORG_ID)
+  references PROJECT_ORGANIZATIONS (ORG_ID);
+alter table PROJECT_USERS
+  add constraint FK_WAREHOUSE_ID foreign key (WAREHOUSE_ID)
+  references PROJECT_WAREHOUSE (PRODUCT_ID);

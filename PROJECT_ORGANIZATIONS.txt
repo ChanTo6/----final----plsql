@@ -1,0 +1,37 @@
+-- Create table
+create table PROJECT_ORGANIZATIONS
+(
+  org_id     NUMBER generated always as identity,
+  org_name   VARCHAR2(200),
+  address    VARCHAR2(200),
+  email      VARCHAR2(200),
+  telephone  VARCHAR2(200),
+  created_at TIMESTAMP(6)
+)
+tablespace SYSTEM
+  pctfree 10
+  pctused 40
+  initrans 1
+  maxtrans 255
+  storage
+  (
+    initial 64K
+    next 1M
+    minextents 1
+    maxextents unlimited
+  );
+-- Create/Recreate primary, unique and foreign key constraints 
+alter table PROJECT_ORGANIZATIONS
+  add constraint PK_ORGANIZATIONS_ORG_ID primary key (ORG_ID)
+  using index 
+  tablespace SYSTEM
+  pctfree 10
+  initrans 2
+  maxtrans 255
+  storage
+  (
+    initial 64K
+    next 1M
+    minextents 1
+    maxextents unlimited
+  );

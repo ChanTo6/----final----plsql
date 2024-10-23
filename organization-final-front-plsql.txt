@@ -1,0 +1,526 @@
+create or replace noneditionable package body PROJECT_pkg is
+
+ PROCEDURE login_user(
+    p_username  IN VARCHAR2,
+    p_user_data OUT SYS_REFCURSOR
+) IS
+BEGIN
+    
+    OPEN p_user_data FOR
+    SELECT 
+        user_id,               
+        employee_name,         
+        employee_surname,      
+        role,                  
+        password              
+    FROM PROJECT_USERS
+    WHERE employee_name = p_username;
+
+    DBMS_OUTPUT.PUT_LINE('User data retrieved successfully');
+  
+EXCEPTION
+  WHEN NO_DATA_FOUND THEN
+    DBMS_OUTPUT.PUT_LINE('Invalid credentials');
+END login_user;
+
+
+
+ ----------------------------------------------
+ 
+PROCEDURE create_user (
+   p_email               IN VARCHAR2,
+   p_employee_lastname   IN VARCHAR2,
+   p_employee_name       IN VARCHAR2,
+   p_organizationAddress IN VARCHAR2,
+   p_org_name            IN VARCHAR2,
+   p_password            IN VARCHAR2,
+   p_telephone           IN VARCHAR2, 
+   p_role                IN VARCHAR2,
+   p_person_id           IN NUMBER
+)
+IS
+  v_org_id NUMBER;
+BEGIN
+  BEGIN
+
+    SELECT org_id INTO v_org_id
+    FROM PROJECT_ORGANIZATIONS
+    WHERE org_name = p_org_name
+      AND address = p_organizationAddress
+      AND email = p_email;
+  EXCEPTION
+    WHEN NO_DATA_FOUND THEN
+    
+      INSERT INTO PROJECT_ORGANIZATIONS (org_name, address, email, created_at)
+      VALUES (p_org_name, p_organizationAddress, p_email, SYSTIMESTAMP)
+      RETURNING org_id INTO v_org_id;
+  END;
+
+
+  INSERT INTO PROJECT_USERS (org_id, password, role, employee_name, employee_surname, telephone, created_at, person_id)
+  VALUES (v_org_id, p_password, p_role, p_employee_name, p_employee_lastname, p_telephone, SYSTIMESTAMP, p_person_id);
+  
+  COMMIT;
+  
+EXCEPTION
+  WHEN OTHERS THEN
+
+    ROLLBACK;
+    RAISE_APPLICATION_ERROR(-20001, 'Error occurred: ' || SQLERRM);
+END create_user;
+
+
+
+-----------------------------------------------
+
+PROCEDURE upd_user_by_id(
+    p_person_id        IN NUMBER,
+    p_employee_name    IN VARCHAR2,
+    p_employee_surname IN VARCHAR2,
+    p_role             IN VARCHAR2,
+    p_org_name         IN VARCHAR2,
+    p_telephone        IN NUMBER,  
+    p_password         IN VARCHAR2,
+    p_warehouse        IN VARCHAR2
+) 
+IS
+    v_new_org_id NUMBER;
+BEGIN
+    -- Get the new organization ID
+    SELECT MIN(org_id) INTO v_new_org_id  
+    FROM PROJECT_ORGANIZATIONS
+    WHERE org_name = p_org_name;
+
+    IF v_new_org_id IS NULL THEN
+        RAISE_APPLICATION_ERROR(-20006, 'Organization not found.');
+    END IF;
+
+    -- Update the user information
+    UPDATE PROJECT_USERS
+    SET
+        employee_name = p_employee_name,
+        employee_surname = p_employee_surname,
+        role = p_role,
+        telephone = p_telephone,
+        password = p_password, 
+        org_id = v_new_org_id,
+        warehouse_id = 
+            CASE 
+                WHEN p_role = 'manager' THEN NULL
+                ELSE (
+                    SELECT MIN(warehouse_id)
+                    FROM PROJECT_WAREHOUSE 
+                    WHERE warehouse_name = p_warehouse
+                )
+            END
+    WHERE person_id = p_person_id;
+
+    IF SQL%ROWCOUNT = 0 THEN
+        RAISE_APPLICATION_ERROR(-20005, 'No rows updated. Person ID may not exist.');
+    END IF;
+
+    COMMIT;
+END;
+
+
+
+-------------------------------------------------------
+
+
+PROCEDURE delete_user(
+    p_person_id IN NUMBER
+) IS
+    v_org_id NUMBER;
+BEGIN
+    BEGIN
+        SELECT org_id INTO v_org_id
+        FROM PROJECT_USERS
+        WHERE USER_ID = p_person_id;
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            DBMS_OUTPUT.PUT_LINE('No user found with the given ID.');
+            RETURN; 
+    END;
+    DELETE FROM PROJECT_WAREHOUSE
+    WHERE USER_ID = p_person_id;
+
+    DELETE FROM PROJECT_USERS
+    WHERE USER_ID = p_person_id;
+
+    BEGIN
+        DELETE FROM PROJECT_ORGANIZATIONS
+        WHERE org_id = v_org_id
+        AND NOT EXISTS (SELECT 1 FROM PROJECT_USERS WHERE org_id = v_org_id);
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            DBMS_OUTPUT.PUT_LINE('Cannot delete the organization because other users still belong to it.');
+    END;
+
+    COMMIT;
+EXCEPTION
+    WHEN OTHERS THEN
+        ROLLBACK;
+        RAISE;
+END delete_user;
+
+
+
+-------------------------------------------------------
+
+
+------------------------------------------------------------------
+
+
+----------------------------------------------------------------
+
+
+PROCEDURE Register_Organization(
+    p_org_name   IN VARCHAR2,
+    p_address    IN VARCHAR2,
+    p_email      IN VARCHAR2,
+    p_telephone  IN VARCHAR2
+) IS
+    v_org_id     NUMBER;
+BEGIN
+    INSERT INTO PROJECT_ORGANIZATIONS (org_name, address, email, telephone, created_at)
+    VALUES (p_org_name, p_address, p_email, p_telephone, SYSTIMESTAMP)
+    RETURNING org_id INTO v_org_id;
+
+    COMMIT;
+END;
+--------------------------------------------------------------------
+
+ PROCEDURE Org_Login(
+    p_username  IN  VARCHAR2,
+    p_password  IN  VARCHAR2,
+    p_org_cursor OUT SYS_REFCURSOR,
+    p_employee_cursor OUT SYS_REFCURSOR
+) IS
+    v_org_id NUMBER;
+    v_employee_count NUMBER; 
+BEGIN
+    SELECT org_id INTO v_org_id
+    FROM PROJECT_USERS
+    WHERE EMPLOYEE_NAME = p_username
+    AND password = p_password;
+    OPEN p_org_cursor FOR
+    SELECT org_name, address, email, telephone, created_at
+    FROM PROJECT_ORGANIZATIONS
+    WHERE org_id = v_org_id;
+    OPEN p_employee_cursor FOR
+    SELECT EMPLOYEE_NAME, role, employee_name, created_at
+    FROM PROJECT_USERS
+    WHERE org_id = v_org_id;
+
+    SELECT COUNT(*)
+    INTO v_employee_count
+    FROM PROJECT_USERS
+    WHERE org_id = v_org_id;
+
+    DBMS_OUTPUT.PUT_LINE('Number of employees: ' || v_employee_count);
+
+EXCEPTION
+    WHEN NO_DATA_FOUND THEN
+        DBMS_OUTPUT.PUT_LINE('Invalid login credentials or organization not found.');
+        p_org_cursor := NULL;
+        p_employee_cursor := NULL;
+
+    WHEN OTHERS THEN
+        DBMS_OUTPUT.PUT_LINE('An error occurred: ' || SQLERRM);
+        p_org_cursor := NULL;
+        p_employee_cursor := NULL;
+END;
+
+---------------------------------------------------------------
+
+
+
+---------------------------------
+PROCEDURE Get_Barcodes(ref_cursor OUT SYS_REFCURSOR) AS
+BEGIN
+  OPEN ref_cursor FOR
+    SELECT barcode
+    FROM PROJECT_WAREHOUSE;
+END Get_Barcodes;
+
+
+------------------------------------------------
+PROCEDURE get_all_users(p_cursor OUT SYS_REFCURSOR) IS
+BEGIN
+  OPEN p_cursor FOR
+    SELECT DISTINCT
+           u.user_id,
+           u.password,
+           u.role,
+           u.employee_name,
+           u.employee_surname,
+           u.telephone AS user_telephone,
+           u.person_id,
+           u.is_active,
+           o.org_name,
+           o.email AS org_email,
+           o.telephone AS org_telephone
+      FROM PROJECT_ORGANIZATIONS o
+      LEFT JOIN PROJECT_USERS u ON u.org_id = o.org_id;
+END ;
+------------------------------------------------------
+
+PROCEDURE add_prod_to_warehouse(
+    p_product_name   IN VARCHAR2,
+    p_quantity       IN NUMBER,
+    p_barcode        IN VARCHAR2,
+    p_user_id        IN NUMBER,
+    p_warehouse_name IN VARCHAR2,
+    p_location       IN VARCHAR2 
+) IS
+    v_total_quantity NUMBER;
+    v_product_id     NUMBER;
+BEGIN
+    SELECT NVL(SUM(quantity), 0) INTO v_total_quantity
+    FROM PROJECT_WAREHOUSE
+    WHERE warehouse_name = p_warehouse_name
+    AND location = p_location; 
+
+    IF v_total_quantity + p_quantity > 40 THEN
+        RAISE_APPLICATION_ERROR(-20001, 'Total quantity in warehouse cannot exceed 40.');
+    END IF;
+
+    BEGIN
+        SELECT product_id INTO v_product_id
+        FROM PROJECT_WAREHOUSE
+        WHERE product_name = p_product_name
+        AND warehouse_name = p_warehouse_name
+        AND location = p_location; 
+        UPDATE PROJECT_WAREHOUSE
+        SET quantity = quantity + p_quantity
+        WHERE product_id = v_product_id;
+
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            INSERT INTO PROJECT_WAREHOUSE (product_name, quantity, barcode, user_id, warehouse_name, location, max_quantity)
+            VALUES (p_product_name, p_quantity, p_barcode, p_user_id, p_warehouse_name, p_location, 15);
+    END;
+
+END;
+
+
+
+
+
+
+-----------------------------------------------------
+PROCEDURE edit_prod_in_warehouse (
+    p_product_id   IN NUMBER,
+    p_product_name IN VARCHAR2,
+    p_quantity     IN NUMBER,
+    p_barcode      IN VARCHAR2,
+    p_user_id      IN NUMBER
+)
+IS
+BEGIN
+    UPDATE PROJECT_WAREHOUSE
+    SET
+        product_name = p_product_name,
+        quantity     = p_quantity,
+        barcode      = p_barcode,
+        user_id      = p_user_id
+    WHERE product_id = p_product_id;
+    DBMS_OUTPUT.PUT_LINE('Product successfully updated in warehouse.');
+END ;
+------------------------------------------
+
+PROCEDURE FetchAllProducts (
+    p_result_set OUT SYS_REFCURSOR
+)
+AS
+BEGIN
+    OPEN p_result_set FOR
+    SELECT w.product_id, w.user_id, w.product_name, w.quantity, w.barcode, u.role
+    FROM project_warehouse w
+    JOIN project_users u ON w.user_id = u.user_id;
+END FetchAllProducts;
+
+------------------------------------------------
+PROCEDURE get_user_prods  (
+    p_user_id    IN NUMBER,
+    p_result_set OUT SYS_REFCURSOR
+)
+AS
+BEGIN
+    OPEN p_result_set FOR
+    SELECT product_id, user_id, product_name, quantity, barcode, warehouse_name
+    FROM project_warehouse
+    WHERE user_id = p_user_id;
+END ;
+
+--------------------------------------------
+PROCEDURE Remove_Product (
+    p_user_id      NUMBER,
+    p_barcode      VARCHAR2,
+    p_quantity     NUMBER
+) IS
+    v_current_quantity NUMBER;
+    v_product_exists   NUMBER;
+    v_warehouse_name   VARCHAR2(200);
+
+BEGIN
+
+    SELECT quantity, warehouse_name
+    INTO v_current_quantity, v_warehouse_name
+    FROM PROJECT_WAREHOUSE
+    WHERE barcode = p_barcode;
+
+    
+    IF v_warehouse_name IS NULL THEN
+        RAISE_APPLICATION_ERROR(-20003, 'Product with the given barcode does not exist in any warehouse.');
+    END IF;
+
+
+    IF p_quantity > v_current_quantity THEN
+        RAISE_APPLICATION_ERROR(-20001, 'Not enough quantity in the warehouse.');
+    ELSIF v_current_quantity = 0 THEN
+        RAISE_APPLICATION_ERROR(-20002, 'Product quantity is zero. Cannot remove.');
+    END IF;
+
+
+    UPDATE PROJECT_WAREHOUSE
+    SET quantity = quantity - p_quantity
+    WHERE barcode = p_barcode AND warehouse_name = v_warehouse_name;
+
+ 
+    SELECT COUNT(*)
+    INTO v_product_exists
+    FROM PROJECT_REMOVED_PRODUCTS
+    WHERE barcode = p_barcode;
+
+    IF v_product_exists > 0 THEN
+        UPDATE PROJECT_REMOVED_PRODUCTS
+        SET quantity = quantity + p_quantity,
+            removal_count = removal_count + 1,
+            removed_by_user_id = p_user_id,
+            warehouse_name = v_warehouse_name
+        WHERE barcode = p_barcode;
+    ELSE
+    
+        INSERT INTO PROJECT_REMOVED_PRODUCTS (product_id, product_name, quantity, barcode, removal_count, removed_by_user_id, warehouse_name)
+        SELECT product_id, product_name, p_quantity, barcode, 1, p_user_id, warehouse_name
+        FROM PROJECT_WAREHOUSE
+        WHERE barcode = p_barcode;
+    END IF;
+
+    DELETE FROM PROJECT_WAREHOUSE
+    WHERE barcode = p_barcode AND quantity = 0 AND warehouse_name = v_warehouse_name;
+
+    COMMIT;
+
+EXCEPTION
+    WHEN NO_DATA_FOUND THEN
+        RAISE_APPLICATION_ERROR(-20003, 'Product with barcode does not exist.');
+    WHEN OTHERS THEN
+        RAISE_APPLICATION_ERROR(-20004, SQLERRM);
+END Remove_Product;
+----------------------------------
+PROCEDURE GetRemovedProducts(p_cursor OUT SYS_REFCURSOR) AS
+BEGIN
+  OPEN p_cursor FOR
+    SELECT product_id, product_name, quantity, barcode, removed_by_user_id,WAREHOUSE_NAME
+    FROM PROJECT_REMOVED_PRODUCTS;
+END GetRemovedProducts;
+----------------------------------------------------------------------
+
+ PROCEDURE get_removed_prods (
+    p_user_id IN NUMBER,
+    p_cursor OUT SYS_REFCURSOR
+) AS
+BEGIN
+    OPEN p_cursor FOR
+        SELECT product_id, product_name, quantity, barcode, removed_by_user_id, WAREHOUSE_NAME
+        FROM PROJECT_REMOVED_PRODUCTS
+        WHERE removed_by_user_id = p_user_id;
+END ;
+
+--------------------------------------------------------
+PROCEDURE UPDATE_USER_STATUS(p_user_id IN NUMBER, p_is_active IN NUMBER) IS
+BEGIN
+    UPDATE PROJECT_USERS
+    SET is_active = p_is_active
+    WHERE user_id = p_user_id;
+END UPDATE_USER_STATUS;
+----------------------------------------------------
+ PROCEDURE get_org_names(
+    p_refcursor OUT SYS_REFCURSOR
+) AS
+BEGIN
+    OPEN p_refcursor FOR
+    SELECT DISTINCT org_name
+    FROM PROJECT_ORGANIZATIONS;
+END get_org_names;
+
+------------------------------------------
+ PROCEDURE check_free_seats (
+    p_user_id IN NUMBER,
+    o_cursor OUT SYS_REFCURSOR
+) IS
+BEGIN
+    OPEN o_cursor FOR
+        SELECT warehouse_name,
+               NVL(SUM(quantity), 0) AS total_quantity,
+               (15 - NVL(SUM(quantity), 0)) AS free_seats
+        FROM PROJECT_WAREHOUSE
+        WHERE user_id = p_user_id
+        GROUP BY warehouse_name;
+
+    IF o_cursor%NOTFOUND THEN
+        DBMS_OUTPUT.PUT_LINE('No warehouse found for user_id: ' || p_user_id);
+    END IF;
+END;
+
+---------------------------------------------------------
+PROCEDURE check_free_seats(
+    o_cursor OUT SYS_REFCURSOR
+) IS
+BEGIN
+    OPEN o_cursor FOR
+        SELECT warehouse_name,
+               NVL(SUM(quantity), 0) AS total_quantity,
+               (15 - NVL(SUM(quantity), 0)) AS free_seats
+        FROM PROJECT_WAREHOUSE
+        GROUP BY warehouse_name;
+END;
+
+-------------------------------------
+PROCEDURE FetchNameAndLocation (
+    p_result_set OUT SYS_REFCURSOR
+)
+AS
+BEGIN
+    OPEN p_result_set FOR
+    SELECT w.WAREHOUSE_NAME, w.location
+    FROM project_warehouse w;
+END FetchNameAndLocation;
+
+-----------------------------------
+PROCEDURE ADD_WAREHOUSE (
+    p_user_id        IN NUMBER,
+    p_warehouse_name IN VARCHAR2,
+    p_location       IN VARCHAR2
+) AS
+BEGIN
+    INSERT INTO PROJECT_WAREHOUSE (
+    user_id,
+        warehouse_name,
+        location
+    ) VALUES (
+        p_user_id,
+        p_warehouse_name,
+        p_location
+    );
+    COMMIT;
+EXCEPTION
+    WHEN OTHERS THEN
+        ROLLBACK;
+        RAISE_APPLICATION_ERROR(-20001, 'An error occurred while adding the warehouse.');
+END ADD_WAREHOUSE;
+-------------------------------------
+
+END PROJECT_pkg;

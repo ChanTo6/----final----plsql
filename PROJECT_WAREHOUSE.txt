@@ -1,0 +1,57 @@
+-- Create table
+create table PROJECT_WAREHOUSE
+(
+  product_id     NUMBER generated always as identity,
+  product_name   VARCHAR2(200),
+  quantity       NUMBER,
+  barcode        VARCHAR2(200),
+  user_id        NUMBER,
+  warehouse_name VARCHAR2(200),
+  max_quantity   NUMBER,
+  name           VARCHAR2(200),
+  location       VARCHAR2(200)
+)
+tablespace SYSTEM
+  pctfree 10
+  pctused 40
+  initrans 1
+  maxtrans 255
+  storage
+  (
+    initial 64K
+    next 1M
+    minextents 1
+    maxextents unlimited
+  );
+-- Create/Recreate primary, unique and foreign key constraints 
+alter table PROJECT_WAREHOUSE
+  add constraint PK_WAREHOUSE_PRODUCT_ID primary key (PRODUCT_ID)
+  using index 
+  tablespace SYSTEM
+  pctfree 10
+  initrans 2
+  maxtrans 255
+  storage
+  (
+    initial 64K
+    next 1M
+    minextents 1
+    maxextents unlimited
+  );
+alter table PROJECT_WAREHOUSE
+  add constraint UK_BARCODE unique (BARCODE)
+  using index 
+  tablespace SYSTEM
+  pctfree 10
+  initrans 2
+  maxtrans 255
+  storage
+  (
+    initial 64K
+    next 1M
+    minextents 1
+    maxextents unlimited
+  );
+alter table PROJECT_WAREHOUSE
+  add constraint FK_USER_ID foreign key (USER_ID)
+  references PROJECT_USERS (USER_ID);
